@@ -1,0 +1,434 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Tenant {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  users     User[]
+  students  Student[]
+  parents   Parent[]
+  groups    Group[]
+  invoices  Invoice[]
+  payments  Payment[]
+  settings  Settings?
+
+  // Added missing relations
+  subjects              Subject[]
+  classrooms            Classroom[]
+  income                Income[]
+  expenses              Expense[]
+  staff                 Staff[]
+  salaries              Salary[]
+  exams                 Exam[]
+  homeworks             Homework[]
+  notificationTemplates NotificationTemplate[]
+  notifications         Notification[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  username     String   @unique
+  passwordHash String
+  name         String
+  role         String // "admin", "teacher", "assistant"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs AuditLog[]
+}
+
+model Student {
+  id             String    @id @default(uuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  code           String?   @unique
+  name           String
+  phone          String?
+  phone2         String?
+  grade          String?
+  school         String?
+  status         String    @default("نشط") // Active
+  gender         String?   @default("ذكر")
+  birthdate      String?
+  photoUrl       String?
+  notes          String?
+  medicalNotes   String?
+  tags           String? // JSON string array
+  qrToken        String?   @unique @default(uuid())
+  enrollmentDate DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  parents             StudentParent[]
+  enrollments         Enrollment[]
+  attendance          Attendance[]
+  invoices            Invoice[]
+  grades              Grade[]
+  homeworkSubmissions HomeworkSubmission[]
+}
+
+model Parent {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  name      String
+  phone     String?
+  phone2    String?
+  email     String?
+  relation  String?   @default("أب")
+  whatsapp  String?
+  job       String?
+  notes     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  students StudentParent[]
+}
+
+model StudentParent {
+  id        String  @id @default(uuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
+  parentId  String
+  parent    Parent  @relation(fields: [parentId], references: [id])
+  relation  String // "father", "mother", etc
+  isPrimary Boolean @default(false)
+  tenantId  String?
+
+  @@unique([studentId, parentId])
+}
+
+model Group {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  name         String
+  subject      String
+  grade        String
+  teacherId    String?
+  paymentType  String // "شهري", "بالحصة", "دورة"
+  monthlyPrice Int // Minor units
+  sessionPrice Int? // Minor units
+  schedule     String? // JSON string or simpler
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  enrollments Enrollment[]
+  sessions    ClassSession[]
+  exams       Exam[]
+  homework    Homework[]
+}
+
+model Enrollment {
+  id            String    @id @default(uuid())
+  studentId     String
+  student       Student   @relation(fields: [studentId], references: [id])
+  groupId       String
+  group         Group     @relation(fields: [groupId], references: [id])
+  priceOverride Int? // Minor units
+  joinedAt      DateTime  @default(now())
+  leftAt        DateTime?
+
+  @@unique([studentId, groupId])
+}
+
+model ClassSession {
+  id        String   @id @default(uuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id])
+  date      DateTime
+  startTime String?
+  endTime   String?
+  status    String   @default("scheduled")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendance Attendance[]
+}
+
+model Attendance {
+  id        String       @id @default(uuid())
+  studentId String
+  student   Student      @relation(fields: [studentId], references: [id])
+  sessionId String
+  session   ClassSession @relation(fields: [sessionId], references: [id])
+  status    String // "حاضر", "غائب", "متأخر", "بعذر"
+  method    String // "MANUAL", "QR_MOBILE", "QR_USB", "SEARCH"
+  markedAt  DateTime     @default(now())
+  markedBy  String?
+
+  @@unique([studentId, sessionId])
+}
+
+model Invoice {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  studentId   String
+  student     Student   @relation(fields: [studentId], references: [id])
+  period      String? // e.g. "2023-10"
+  totalAmount Int // Minor units
+  status      String // "draft", "unpaid", "partial", "paid", "cancelled"
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  lines       InvoiceLine[]
+  allocations PaymentAllocation[]
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  amount      Int // Minor units
+}
+
+model Payment {
+  id            String    @id @default(uuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  studentId     String?
+  receiptNumber String?   @unique
+  amount        Int // Minor units
+  method        String // "cash", "wallet", "card"
+  paymentDate   DateTime
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  allocations PaymentAllocation[]
+}
+
+model PaymentAllocation {
+  id        String  @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Int // Minor units
+
+  @@unique([paymentId, invoiceId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  before    String? // JSON
+  after     String? // JSON
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  id           String  @id @default(uuid())
+  tenantId     String  @unique
+  tenant       Tenant  @relation(fields: [tenantId], references: [id])
+  centerName   String
+  centerPhone  String?
+  currency     String  @default("EGP")
+  academicYear String
+  enableQR     Boolean @default(true)
+}
+
+model Subject {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  name      String
+  nameEn    String?
+  color     String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Classroom {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  name      String
+  capacity  Int
+  location  String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Income {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  source      String
+  category    String
+  amount      Int // Minor units
+  description String?
+  incomeDate  String
+  reference   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  category    String
+  amount      Int // Minor units
+  payee       String?
+  description String?
+  expenseDate String
+  reference   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model Staff {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  name         String
+  role         String
+  phone        String?
+  email        String?
+  username     String?   @unique
+  passwordHash String?
+  baseSalary   Int // Minor units
+  hireDate     String
+  status       String    @default("نشط")
+  permissions  String // JSON string containing permissions map
+  notes        String?
+  isActive     Boolean   @default(true)
+  userId       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  salaries Salary[]
+}
+
+model Salary {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  staffId     String
+  staff       Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  month       String
+  amount      Int // Minor units
+  bonus       Int      @default(0) // Minor units
+  deduction   Int      @default(0) // Minor units
+  netAmount   Int // Minor units
+  status      String   @default("غير مدفوع")
+  paymentDate String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Exam {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  groupId     String
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  subjectId   String?
+  title       String
+  examDate    String
+  maxScore    Int
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  grades Grade[]
+}
+
+model Grade {
+  id        String   @id @default(uuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  score     Int
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Homework {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  groupId      String
+  group        Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  assignedDate String
+  dueDate      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submissions HomeworkSubmission[]
+}
+
+model HomeworkSubmission {
+  id            String   @id @default(uuid())
+  homeworkId    String
+  homework      Homework @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status        String   @default("غير مسلّم")
+  submittedDate String?
+  teacherNotes  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  channel   String
+  body      String
+  variables String // JSON string of array
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id            String    @id @default(uuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  recipientType String
+  recipientId   String
+  channel       String
+  body          String
+  status        String    @default("pending")
+  sentAt        DateTime?
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
